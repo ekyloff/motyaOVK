@@ -41,9 +41,9 @@ class Topics
 
         # Get pinned topics first
         $query  = "SELECT `id` FROM `topics` WHERE `pinned` = 1 AND `group` = ? AND `deleted` = 0 UNION SELECT `id` FROM `topics` WHERE `pinned` = 0 AND `group` = ? AND `deleted` = 0";
-        $query .= " LIMIT " . $perPage . " OFFSET " . ($page - 1) * $perPage;
+        $query .= " LIMIT ? OFFSET ?";
 
-        foreach (DatabaseConnection::i()->getConnection()->query($query, $club->getId(), $club->getId()) as $topic) {
+        foreach (DatabaseConnection::i()->getConnection()->query($query, $club->getId(), $club->getId(), $perPage, ($page - 1) * $perPage) as $topic) {
             $topic = $this->get($topic->id);
             if (!$topic) {
                 continue;

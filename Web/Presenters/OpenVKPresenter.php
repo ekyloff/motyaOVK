@@ -177,11 +177,12 @@ abstract class OpenVKPresenter extends SimplePresenter
         $columns = implode(", ", array_map(function ($col) {
             return "`" . addslashes($col) . "`";
         }, array_keys($data)));
-        $values  = implode(", ", array_map(function ($val) {
-            return "'" . addslashes((string) (int) $val) . "'";
-        }, array_values($data)));
+        $placeholders = implode(", ", array_fill(0, count($data), "?"));
 
-        $db->getConnection()->query("INSERT INTO " . $type . "s($columns) VALUES ($values);");
+        $db->getConnection()->query(
+            "INSERT INTO " . $type . "s($columns) VALUES ($placeholders);",
+            ...array_values($data)
+        );
 
         return true;
     }

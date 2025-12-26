@@ -215,23 +215,29 @@ final class WallPresenter extends OpenVKPresenter
 
         $queryBase = "FROM `posts` LEFT JOIN `groups` ON GREATEST(`posts`.`wall`, 0) = 0 AND `groups`.`id` = ABS(`posts`.`wall`) LEFT JOIN `profiles` ON LEAST(`posts`.`wall`, 0) = 0 AND `profiles`.`id` = ABS(`posts`.`wall`)";
         $queryBase .= "WHERE (`groups`.`hide_from_global_feed` = 0 OR `groups`.`name` IS NULL) AND ((`profiles`.`profile_type` = 0 AND `profiles`.`hide_global_feed` = 0) OR `profiles`.`first_name` IS NULL) AND `posts`.`deleted` = 0 AND `posts`.`suggested` = 0";
+        $params = [];
 
         if ($this->user->identity->getNsfwTolerance() === User::NSFW_INTOLERANT) {
             $queryBase .= " AND `nsfw` = 0";
         }
 
         if (((int) $this->queryParam('return_banned')) == 0) {
-            $ignored_sources_ids = $this->user->identity->getIgnoredSources(0, OPENVK_ROOT_CONF['openvk']['preferences']['newsfeed']['ignoredSourcesLimit'] ?? 50, true);
+            $ignored_sources_ids = array_map('intval', $this->user->identity->getIgnoredSources(0, OPENVK_ROOT_CONF['openvk']['preferences']['newsfeed']['ignoredSourcesLimit'] ?? 50, true));
 
             if (sizeof($ignored_sources_ids) > 0) {
-                $imploded_ids = implode("', '", $ignored_sources_ids);
-
-                $queryBase .= " AND `posts`.`wall` NOT IN ('$imploded_ids')";
+                $queryBase .= " AND `posts`.`wall` NOT IN (" . implode(", ", array_fill(0, count($ignored_sources_ids), "?")) . ")";
+                $params = array_merge($params, $ignored_sources_ids);
             }
         }
 
-        $posts = DatabaseConnection::i()->getConnection()->query("SELECT `posts`.`id` " . $queryBase . " ORDER BY `created` DESC LIMIT " . $pPage . " OFFSET " . ($page - 1) * $pPage);
-        $count = DatabaseConnection::i()->getConnection()->query("SELECT COUNT(*) " . $queryBase)->fetch()->{"COUNT(*)"};
+        $posts = DatabaseConnection::i()->getConnection()->query(
+            "SELECT `posts`.`id` " . $queryBase . " ORDER BY `created` DESC LIMIT ? OFFSET ?",
+            ...array_merge($params, [$pPage, ($page - 1) * $pPage])
+        );
+        $count = DatabaseConnection::i()->getConnection()->query(
+            "SELECT COUNT(*) " . $queryBase,
+            ...$params
+        )->fetch()->{"COUNT(*)"};
 
         $this->template->_template     = "Wall/Feed.xml";
         $this->template->globalFeed    = true;

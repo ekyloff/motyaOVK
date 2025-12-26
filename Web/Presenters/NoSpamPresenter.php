@@ -203,41 +203,43 @@ final class NoSpamPresenter extends OpenVKPresenter
                 $table = $model->getTableName();
                 $columns = $db->getStructure()->getColumns($table);
 
+                $whereParts  = [];
+                $whereParams = [];
+
                 if ($searchTerm) {
-                    $conditions = [];
+                    $conditions   = [];
                     $need_deleted = false;
                     foreach ($columns as $column) {
                         if ($column["name"] == "deleted") {
                             $need_deleted = true;
                         } else {
-                            $conditions[] = "`$column[name]` REGEXP '$searchTerm'";
+                            $conditions[] = "`$column[name]` REGEXP ?";
+                            $whereParams[] = $searchTerm;
                         }
                     }
-                    $conditions = implode(" OR ", $conditions);
-
-                    $where = ($this->postParam("where") ? " AND ($conditions)" : "($conditions)");
+                    if ($conditions) {
+                        $whereParts[] = "(" . implode(" OR ", $conditions) . ")";
+                    }
                     if ($need_deleted) {
-                        $where .= " AND (`deleted` = 0)";
+                        $whereParts[] = "`deleted` = 0";
                     }
                 }
+
+                if ($this->postParam("where")) {
+                    $whereParts[] = "(" . $this->postParam("where") . ")";
+                }
+
+                $where = implode(" AND ", $whereParts);
 
                 $rows = [];
 
-                if (str_starts_with($where, " AND")) {
-                    if ($searchTerm && !$this->postParam("where")) {
-                        $where = substr_replace($where, "", 0, strlen(" AND"));
-                    } else {
-                        $where = "(" . $this->postParam("where") . ")" . $where;
-                    }
-                }
-
                 if ($ip || $useragent || $ts || $te || $user) {
-                    $rows = $this->searchByAdditionalParams($table, $where, $ip, $useragent, $ts, $te, $user);
+                    $rows = $this->searchByAdditionalParams($table, $where, $whereParams, $ip, $useragent, $ts, $te, $user);
                 } else {
                     if (!$where) {
                         $rows = [];
                     } else {
-                        $result = $db->query("SELECT * FROM `$table` WHERE $where");
+                        $result = $db->query("SELECT * FROM `$table` WHERE $where", ...$whereParams);
                         $rows = $result->fetchAll();
                     }
                 }
@@ -351,23 +353,28 @@ final class NoSpamPresenter extends OpenVKPresenter
         }
     }
 
-    private function searchByAdditionalParams(?string $table = null, ?string $where = null, ?string $ip = null, ?string $useragent = null, ?int $ts = null, ?int $te = null, $user = null)
+    private function searchByAdditionalParams(?string $table = null, ?string $where = null, array $whereParams = [], ?string $ip = null, ?string $useragent = null, ?int $ts = null, ?int $te = null, $user = null)
     {
         $db = DatabaseConnection::i()->getContext();
         if ($table && ($ip || $useragent || $ts || $te || $user)) {
             $conditions = [];
+            $params = [];
 
             if ($ip) {
-                $conditions[] = "`ip` REGEXP '$ip'";
+                $conditions[] = "`ip` REGEXP ?";
+                $params[] = $ip;
             }
             if ($useragent) {
-                $conditions[] = "`useragent` REGEXP '$useragent'";
+                $conditions[] = "`useragent` REGEXP ?";
+                $params[] = $useragent;
             }
             if ($ts) {
-                $conditions[] = "`ts` < $ts";
+                $conditions[] = "`ts` < ?";
+                $params[] = $ts;
             }
             if ($te) {
-                $conditions[] = "`ts` > $te";
+                $conditions[] = "`ts` > ?";
+                $params[] = $te;
             }
             if ($user) {
                 $users = new Users();
@@ -378,20 +385,26 @@ final class NoSpamPresenter extends OpenVKPresenter
                     ?? null;
 
                 if ($_user) {
-                    $conditions[] = "`user` = '" . $_user->getChandlerGUID() . "'";
+                    $conditions[] = "`user` = ?";
+                    $params[] = $_user->getChandlerGUID();
                 }
             }
 
-            $whereStart = "WHERE `object_table` = '$table'";
+            $query = "SELECT * FROM `ChandlerLogs` WHERE `object_table` = ?";
+            $queryParams = [$table];
             if ($table === "profiles") {
-                $whereStart .= "AND `type` = 0";
+                $query .= " AND `type` = 0";
             }
 
-            $conditions = count($conditions) > 0 ? "AND (" . implode(" AND ", $conditions) . ")" : "";
+            if (count($conditions) > 0) {
+                $query .= " AND (" . implode(" AND ", $conditions) . ")";
+                $queryParams = array_merge($queryParams, $params);
+            }
+
             $response = [];
 
-            if ($conditions) {
-                $logs = $db->query("SELECT * FROM `ChandlerLogs` $whereStart $conditions GROUP BY `object_id`, `object_model`");
+            if (count($conditions) > 0) {
+                $logs = $db->query($query . " GROUP BY `object_id`, `object_model`", ...$queryParams);
 
                 foreach ($logs as $log) {
                     $log = (new Logs())->get($log->id);
@@ -401,11 +414,7 @@ final class NoSpamPresenter extends OpenVKPresenter
                         continue;
                     }
                     if ($where) {
-                        if (str_starts_with($where, " AND")) {
-                            $where = substr_replace($where, "", 0, strlen(" AND"));
-                        }
-
-                        $a = $db->query("SELECT * FROM `$table` WHERE $where")->fetchAll();
+                        $a = $db->query("SELECT * FROM `$table` WHERE $where", ...$whereParams)->fetchAll();
                         foreach ($a as $o) {
                             if ($object->id == $o["id"]) {
                                 $response[] = $object;

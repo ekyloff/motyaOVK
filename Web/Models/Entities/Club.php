@@ -248,11 +248,10 @@ class Club extends RowModel
             $end   = $i === 1 ? time() + 10 : strtotime("-" . ($i - 1) . "day midnight");
 
             $query  = "SELECT COUNT(" . ($unique ? "DISTINCT profile" : "*") . ") AS cnt FROM postViews";
-            $query .= " WHERE `group`=1 AND owner=" . $this->getId();
-            $query .= " AND timestamp > $begin AND timestamp < $end";
+            $query .= " WHERE `group` = 1 AND owner = ? AND timestamp > ? AND timestamp < ?";
 
-            $sub = $edb->getConnection()->query("$query AND NOT subscribed=0")->fetch()->cnt;
-            $vir = $edb->getConnection()->query("$query AND subscribed=0")->fetch()->cnt;
+            $sub = $edb->getConnection()->query("$query AND subscribed <> 0", $this->getId(), $begin, $end)->fetch()->cnt;
+            $vir = $edb->getConnection()->query("$query AND subscribed = 0", $this->getId(), $begin, $end)->fetch()->cnt;
             $subs[]  = $sub;
             $viral[] = $vir;
             $total[] = $sub + $vir;
