@@ -115,12 +115,14 @@ class Documents
     public function getTags(int $owner_id, ?int $type = 0): array
     {
         $query = "SELECT `tags` FROM `documents` WHERE `owner` = ? AND `deleted` = 0 AND `unlisted` = 0 ";
+        $params = [$owner_id];
         if ($type > 0 && $type < 9) {
-            $query .= "AND `type` = $type";
+            $query .= "AND `type` = ? ";
+            $params[] = $type;
         }
 
-        $query .= " AND `tags` IS NOT NULL ORDER BY `id`";
-        $result = DatabaseConnection::i()->getConnection()->query($query, $owner_id);
+        $query .= " AND `tags` IS NOT NULL ORDER BY `id` LIMIT 500";
+        $result = DatabaseConnection::i()->getConnection()->query($query, ...$params);
         $tags = [];
         foreach ($result as $res) {
             $tags[] = $res->tags;

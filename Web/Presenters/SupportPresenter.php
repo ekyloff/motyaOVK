@@ -412,7 +412,7 @@ final class SupportPresenter extends OpenVKPresenter
         $user->save();
 
         if ($this->queryParam("close_tickets")) {
-            DatabaseConnection::i()->getConnection()->query("UPDATE tickets SET type = 2 WHERE user_id = " . $id);
+            DatabaseConnection::i()->getConnection()->query("UPDATE tickets SET type = 2 WHERE user_id = ?", $id);
         }
 
         $this->returnJson([ "success" => true, "reason" => $this->queryParam("reason") ]);

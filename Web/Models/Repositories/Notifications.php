@@ -35,17 +35,20 @@ class Notifications
         return (new $repoClassName())->get($id);
     }
 
-    private function getQuery(User $user, bool $count, int $offset, bool $archived = false, int $page = 1, ?int $perPage = null): string
+    private function getQuery(User $user, bool $count, int $offset, bool $archived = false, int $page = 1, ?int $perPage = null): array
     {
         $query    = "SELECT " . ($count ? "COUNT(*) AS cnt" : "*") . " FROM notifications WHERE recipientType=0 ";
-        $query   .= "AND timestamp " . ($archived ? "<" : ">") . "$offset AND recipientId=" . $user->getId();
+        $query   .= "AND timestamp " . ($archived ? "<" : ">") . " ? AND recipientId = ?";
+        $params   = [$offset, $user->getId()];
         if (!$count) {
             $query .= " ORDER BY timestamp DESC";
-            $query .= " LIMIT " . ($perPage ?? OPENVK_DEFAULT_PER_PAGE);
-            $query .= " OFFSET " . (($page - 1) * ($perPage ?? OPENVK_DEFAULT_PER_PAGE));
+            $query .= " LIMIT ?";
+            $query .= " OFFSET ?";
+            $params[] = $perPage ?? OPENVK_DEFAULT_PER_PAGE;
+            $params[] = ($page - 1) * ($perPage ?? OPENVK_DEFAULT_PER_PAGE);
         }
 
-        return $query;
+        return [$query, $params];
     }
 
     private function assemble(int $act, int $originModelType, int $originModelId, int $targetModelType, int $targetModelId, int $recipientId, int $timestamp, $data, ?string $class = null): Notification
@@ -68,7 +71,8 @@ class Notifications
             return 0;
         }
 
-        $results = $db->query($this->getQuery($user, true, $offset, $archived));
+        [$query, $params] = $this->getQuery($user, true, $offset, $archived);
+        $results = $db->query($query, ...$params);
 
         return $results->fetch()->cnt;
     }
@@ -81,7 +85,8 @@ class Notifications
             return;
         }
 
-        $results  = $this->getEDB()->query($this->getQuery($user, false, $offset, $archived, $page, $perPage));
+        [$query, $params] = $this->getQuery($user, false, $offset, $archived, $page, $perPage);
+        $results  = $this->getEDB()->query($query, ...$params);
         foreach ($results->fetchAll() as $notif) {
             yield $this->assemble(
                 $notif->modelAction,

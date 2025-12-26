@@ -63,19 +63,24 @@ final class Newsfeed extends VKAPIRequestHandler
             $queryBase .= " AND `nsfw` = 0";
         }
 
+        $params = [];
+
         if ($return_banned == 0) {
-            $ignored_sources_ids = $this->getUser()->getIgnoredSources(0, OPENVK_ROOT_CONF['openvk']['preferences']['newsfeed']['ignoredSourcesLimit'] ?? 50, true);
+            $ignored_sources_ids = array_map('intval', $this->getUser()->getIgnoredSources(0, OPENVK_ROOT_CONF['openvk']['preferences']['newsfeed']['ignoredSourcesLimit'] ?? 50, true));
 
             if (sizeof($ignored_sources_ids) > 0) {
-                $imploded_ids = implode("', '", $ignored_sources_ids);
-                $queryBase .= " AND `posts`.`wall` NOT IN ('$imploded_ids')";
+                $queryBase .= " AND `posts`.`wall` NOT IN (" . implode(", ", array_fill(0, count($ignored_sources_ids), "?")) . ")";
+                $params = array_merge($params, $ignored_sources_ids);
             }
         }
 
         $start_from = empty($start_from) ? PHP_INT_MAX : $start_from;
         $start_time = empty($start_time) ? 0 : $start_time;
         $end_time = empty($end_time) ? PHP_INT_MAX : $end_time;
-        $posts = DatabaseConnection::i()->getConnection()->query("SELECT `posts`.`id` " . $queryBase . " AND `posts`.`id` <= " . $start_from . " AND " . $start_time . " <= `posts`.`created` AND `posts`.`created` <= " . $end_time . " ORDER BY `created` DESC LIMIT " . $count . " OFFSET " . $offset);
+        $posts = DatabaseConnection::i()->getConnection()->query(
+            "SELECT `posts`.`id` " . $queryBase . " AND `posts`.`id` <= ? AND ? <= `posts`.`created` AND `posts`.`created` <= ? ORDER BY `created` DESC LIMIT ? OFFSET ?",
+            ...array_merge($params, [$start_from, $start_time, $end_time, $count, $offset])
+        );
 
         $rposts = [];
         $ids = [];

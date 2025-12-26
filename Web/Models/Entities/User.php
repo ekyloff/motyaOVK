@@ -24,6 +24,9 @@ class User extends RowModel
     use Traits\TAudioStatuses;
     use Traits\TIgnorable;
     protected $tableName = "profiles";
+    private array $relationPageCache = [];
+    private array $relationCountCache = [];
+    private array $counterCache = [];
 
     public const TYPE_DEFAULT = 0;
     public const TYPE_BOT     = 1;
@@ -48,6 +51,13 @@ class User extends RowModel
         $query  = "SELECT id FROM\n" . file_get_contents(__DIR__ . "/../sql/$filename.tsql");
         $query .= "\n LIMIT " . $limit . " OFFSET " . (($page - 1) * $limit);
 
+        $cacheKey = $filename . ":" . $page . ":" . $limit;
+        if (array_key_exists($cacheKey, $this->relationPageCache)) {
+            yield from $this->relationPageCache[$cacheKey];
+            return;
+        }
+
+        $buffer = [];
         $ids = [];
         $rels = DatabaseConnection::i()->getConnection()->query($query, $id, $id);
         foreach ($rels as $rel) {
@@ -60,16 +70,27 @@ class User extends RowModel
             }
             $ids[] = $rel->getId();
 
-            yield $rel;
+            $buffer[] = $rel;
         }
+
+        $this->relationPageCache[$cacheKey] = $buffer;
+        yield from $buffer;
     }
 
     protected function _abstractRelationCount(string $filename): int
     {
+        $cacheKey = "count:" . $filename;
+        if (array_key_exists($cacheKey, $this->relationCountCache)) {
+            return $this->relationCountCache[$cacheKey];
+        }
+
         $id    = $this->getId();
         $query = "SELECT COUNT(*) AS cnt FROM\n" . file_get_contents(__DIR__ . "/../sql/$filename.tsql");
 
-        return (int) DatabaseConnection::i()->getConnection()->query($query, $id, $id)->fetch()->cnt;
+        $count = (int) DatabaseConnection::i()->getConnection()->query($query, $id, $id)->fetch()->cnt;
+        $this->relationCountCache[$cacheKey] = $count;
+
+        return $count;
     }
 
     public function getId(): int
@@ -732,7 +753,15 @@ class User extends RowModel
 
     public function getUnreadMessagesCount(): int
     {
-        return sizeof(DatabaseConnection::i()->getContext()->table("messages")->where(["recipient_id" => $this->getId(), "unread" => 1]));
+        $cacheKey = "unread_messages";
+        if (array_key_exists($cacheKey, $this->counterCache)) {
+            return $this->counterCache[$cacheKey];
+        }
+
+        $count = sizeof(DatabaseConnection::i()->getContext()->table("messages")->where(["recipient_id" => $this->getId(), "unread" => 1]));
+        $this->counterCache[$cacheKey] = $count;
+
+        return $count;
     }
 
     public function getClubs(int $page = 1, bool $admin = false, int $count = OPENVK_DEFAULT_PER_PAGE, bool $offset = false): \Traversable
@@ -770,17 +799,25 @@ class User extends RowModel
 
     public function getClubCount(bool $admin = false): int
     {
+        $cacheKey = "club_count:" . ($admin ? "admin" : "user");
+        if (array_key_exists($cacheKey, $this->counterCache)) {
+            return $this->counterCache[$cacheKey];
+        }
+
         if ($admin) {
             $id    = $this->getId();
             $query = "SELECT COUNT(*) AS `cnt` FROM (SELECT `id` FROM `groups` WHERE `owner` = ? UNION SELECT `club` as `id` FROM `group_coadmins` WHERE `user` = ?) u0;";
 
-            return (int) DatabaseConnection::i()->getConnection()->query($query, $id, $id)->fetch()->cnt;
+            $count = (int) DatabaseConnection::i()->getConnection()->query($query, $id, $id)->fetch()->cnt;
         } else {
             $sel = $this->getRecord()->related("subscriptions.follower");
             $sel = $sel->where("model", "openvk\\Web\\Models\\Entities\\Club");
 
-            return sizeof($sel);
+            $count = sizeof($sel);
         }
+
+        $this->counterCache[$cacheKey] = $count;
+        return $count;
     }
 
     public function getPinnedClubs(): \Traversable
@@ -806,7 +843,15 @@ class User extends RowModel
 
     public function getPinnedClubCount(): int
     {
-        return sizeof($this->getRecord()->related("groups.owner")->where("owner_club_pinned", true)) + sizeof($this->getRecord()->related("group_coadmins.user")->where("club_pinned", true));
+        $cacheKey = "pinned_club_count";
+        if (array_key_exists($cacheKey, $this->counterCache)) {
+            return $this->counterCache[$cacheKey];
+        }
+
+        $count = sizeof($this->getRecord()->related("groups.owner")->where("owner_club_pinned", true)) + sizeof($this->getRecord()->related("group_coadmins.user")->where("club_pinned", true));
+        $this->counterCache[$cacheKey] = $count;
+
+        return $count;
     }
 
     public function isClubPinned(Club $club): bool
