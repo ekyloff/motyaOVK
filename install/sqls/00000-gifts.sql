@@ -11,9 +11,12 @@ CREATE TABLE IF NOT EXISTS `coin_vouchers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TRIGGER `coinVoucherTokenAutoGen` BEFORE INSERT ON `coin_vouchers`
- FOR EACH ROW IF NEW.token IS NULL THEN
-	SET NEW.token = SUBSTRING(UPPER(REPLACE(UUID(), "-", "")), 1, 24);
-END IF;
+FOR EACH ROW
+BEGIN
+    IF NEW.token IS NULL THEN
+        SET NEW.token = SUBSTRING(UPPER(REPLACE(UUID(), "-", "")), 1, 24);
+    END IF;
+END;
 
 CREATE TABLE IF NOT EXISTS `gifts` (
   `id` bigint(20) unsigned NOT NULL,
